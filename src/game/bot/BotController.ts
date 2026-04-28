@@ -16,7 +16,7 @@ export class BotController {
   async ensureLoaded() {
     if (this.policy) return
     try {
-      const res = await fetch('/bot/best-policy.json', { cache: 'no-store' })
+      const res = await fetch(`${import.meta.env.BASE_URL}bot/best-policy.json`, { cache: 'no-store' })
       if (!res.ok) return
       const json = (await res.json()) as MlpPolicyJson
       if (json.kind !== 'mlp-v1') return
