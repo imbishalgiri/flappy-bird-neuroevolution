@@ -1,0 +1,8 @@
+{
+  "world": { "w": 360, "h": 640, "groundHeight": 96, "ceiling": 0 },
+  "bird": { "x": 120, "yFrac": 0.45, "radius": 16 },
+  "physics": { "gravity": 1550, "flapImpulse": 455, "maxFallSpeed": 980 },
+  "pipes": { "pipeWidth": 20, "gapSize": 150, "speed": 100, "spawnEvery": 1.25 },
+  "bot": { "flapCooldownSec": 0.12 }
+}
+
