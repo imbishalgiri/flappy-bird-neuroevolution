@@ -14,19 +14,35 @@ export class PipeSystem {
   gapSize: number
   speed: number
   spawnEvery: number
+  /** Gap vertical placement; default `Math.random`. */
+  random01: () => number
 
-  constructor(opts: { pipeWidth: number; gapSize: number; speed: number; spawnEvery: number }) {
+  constructor(opts: {
+    pipeWidth: number
+    gapSize: number
+    speed: number
+    spawnEvery: number
+    random01?: () => number
+  }) {
     this.pipeWidth = opts.pipeWidth
     this.gapSize = opts.gapSize
     this.speed = opts.speed
     this.spawnEvery = opts.spawnEvery
+    this.random01 = opts.random01 ?? Math.random
   }
 
-  resize(opts: { pipeWidth: number; gapSize: number; speed: number; spawnEvery: number }) {
+  resize(opts: {
+    pipeWidth: number
+    gapSize: number
+    speed: number
+    spawnEvery: number
+    random01?: () => number
+  }) {
     this.pipeWidth = opts.pipeWidth
     this.gapSize = opts.gapSize
     this.speed = opts.speed
     this.spawnEvery = opts.spawnEvery
+    this.random01 = opts.random01 ?? Math.random
     this.reset()
   }
 
@@ -51,7 +67,7 @@ export class PipeSystem {
     const margin = 24
     const minGapCenter = ceiling + margin + this.gapSize / 2
     const maxGapCenter = groundY - margin - this.gapSize / 2
-    const gapCenter = lerp(minGapCenter, maxGapCenter, Math.random())
+    const gapCenter = lerp(minGapCenter, maxGapCenter, this.random01())
 
     this.pipes.push({ x: worldW + 40, gapY: gapCenter, scored: false })
   }
@@ -74,4 +90,3 @@ export class PipeSystem {
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t
 }
-

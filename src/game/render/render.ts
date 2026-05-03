@@ -12,6 +12,9 @@ export type RenderModel = {
   score: number
   bestScore: number
   botEnabled: boolean
+  trainingVisual: boolean
+  trainingHud?: string
+  trainingSwarm?: import('../bot/canvasTrainSession').SwarmRenderDot[]
   bird: Bird
   pipes: PipeSystem
 }
@@ -22,9 +25,22 @@ export function render(ctx: CanvasRenderingContext2D, m: RenderModel) {
   drawBackground(ctx, m.worldW, m.worldH)
   drawPipes(ctx, m)
   drawGround(ctx, m.worldW, m.groundY, m.worldH)
-  drawBird(ctx, m.bird, m.botEnabled)
-  if (m.botEnabled) drawBotLabel(ctx, m.bird)
+  if (m.trainingSwarm && m.trainingSwarm.length > 0) {
+    drawTrainingSwarm(ctx, m.trainingSwarm)
+  } else {
+    drawBird(ctx, m.bird, m.botEnabled || m.trainingVisual)
+    if (m.botEnabled || m.trainingVisual) drawBotLabel(ctx, m.bird)
+  }
   drawHud(ctx, m)
+}
+
+function drawTrainingSwarm(
+  ctx: CanvasRenderingContext2D,
+  dots: import('../bot/canvasTrainSession').SwarmRenderDot[],
+) {
+  for (const d of dots) {
+    drawBotAlienAt(ctx, { x: d.x, y: d.y, vy: d.vy, radius: d.r })
+  }
 }
 
 function drawBotLabel(ctx: CanvasRenderingContext2D, bird: Bird) {
@@ -102,14 +118,20 @@ function drawBird(ctx: CanvasRenderingContext2D, bird: Bird, botEnabled: boolean
   drawBirdVector(ctx, bird)
 }
 
-/** Grey-alien silhouette for bot mode (B&W, matches collision circle ~ radius). */
+type BotAlienPose = { x: number; y: number; vy: number; radius: number }
+
 function drawBotAlien(ctx: CanvasRenderingContext2D, bird: Bird) {
+  drawBotAlienAt(ctx, { x: bird.x, y: bird.y, vy: bird.vy, radius: bird.radius })
+}
+
+/** Grey-alien silhouette for bot mode (B&W, matches collision circle ~ radius). */
+function drawBotAlienAt(ctx: CanvasRenderingContext2D, pose: BotAlienPose) {
   ctx.save()
-  const angle = clamp(bird.vy / 850, -0.6, 0.9)
-  ctx.translate(bird.x, bird.y)
+  const angle = clamp(pose.vy / 850, -0.6, 0.9)
+  ctx.translate(pose.x, pose.y)
   ctx.rotate(angle)
 
-  const r = bird.radius
+  const r = pose.radius
   const stroke = Math.max(1.5, r * 0.1)
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
@@ -242,6 +264,11 @@ function drawHud(ctx: CanvasRenderingContext2D, m: RenderModel) {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
 
+  if (m.mode === 'training') {
+    drawTrainingHud(ctx, m)
+    return
+  }
+
   ctx.font = '700 34px system-ui, -apple-system, Segoe UI, Roboto, sans-serif'
   ctx.lineWidth = 4
   ctx.strokeStyle = '#ffffff'
@@ -266,6 +293,54 @@ function drawHud(ctx: CanvasRenderingContext2D, m: RenderModel) {
     ]
     overlay(ctx, m, 'Game Over', lines)
   }
+}
+
+function drawTrainingHud(ctx: CanvasRenderingContext2D, m: RenderModel) {
+  const raw = (m.trainingHud ?? '').trim()
+  const lines =
+    raw.length > 0
+      ? raw
+          .split('\n')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+      : ['Training...']
+  const padY = 12
+  const lineH = 15
+  const fontPx = Math.max(11, Math.min(13, Math.round(m.worldW * 0.034)))
+  const boxH = padY * 2 + lines.length * lineH + 4
+  /** Space for fixed DOM train buttons + thumb reach; HUD sits above this band. */
+  const bottomReserve = Math.max(100, Math.min(132, Math.round(m.worldH * 0.14)))
+  const gapAboveCta = 10
+  const boxW = Math.min(540, m.worldW - 28)
+  const x = (m.worldW - boxW) / 2
+  const y0 = m.worldH - bottomReserve - gapAboveCta - boxH
+  const cx = x + boxW / 2
+  const rr = 14
+
+  ctx.save()
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'
+  ctx.shadowBlur = 12
+  ctx.shadowOffsetY = 3
+  ctx.fillStyle = '#141414'
+  roundRect(ctx, x, y0, boxW, boxH, rr)
+  ctx.fill()
+  ctx.shadowBlur = 0
+  ctx.shadowOffsetY = 0
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'
+  ctx.lineWidth = 1
+  roundRect(ctx, x, y0, boxW, boxH, rr)
+  ctx.stroke()
+
+  ctx.fillStyle = '#f2f2f2'
+  ctx.font = `600 ${fontPx}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  let y = y0 + padY + 2
+  for (const line of lines) {
+    ctx.fillText(line, cx, y)
+    y += lineH
+  }
+  ctx.restore()
 }
 
 function overlay(ctx: CanvasRenderingContext2D, m: RenderModel, title: string, bodyLines: string[]) {

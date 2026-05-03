@@ -2,6 +2,10 @@ export type InputHandlers = {
   flap: () => void
   restart: () => void
   toggleBot?: () => void
+  /** Exit training (when active). */
+  exitTrain?: () => void
+  /** Advance to next training epoch when paused between epochs. */
+  nextTrainEpoch?: () => void
   quit?: () => void
 }
 
@@ -24,6 +28,14 @@ export function installInput(handlers: InputHandlers) {
     }
     if (e.code === 'KeyB') {
       handlers.toggleBot?.()
+      return
+    }
+    if (e.code === 'KeyT') {
+      handlers.exitTrain?.()
+      return
+    }
+    if (e.code === 'KeyY') {
+      handlers.nextTrainEpoch?.()
     }
   }
 

@@ -6,6 +6,7 @@ import { installInput } from './input/input'
 import { render } from './render/render'
 import { gameConfig } from './config'
 import { BotController } from './bot/BotController'
+import { CanvasTrainSession } from './bot/canvasTrainSession'
 import { GameSounds } from './audio/gameSounds'
 
 export class Game {
@@ -35,6 +36,10 @@ export class Game {
   private maxFallSpeed = gameConfig.physics.maxFallSpeed
   private readonly flapVelocityBlend = 0.65
 
+  private training: CanvasTrainSession | null = null
+  private readonly trainingDtMult = 3.5
+  private readonly trainingPopulation = 36
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
     const ctx = canvas.getContext('2d')
@@ -58,10 +63,53 @@ export class Game {
 
     this.cleanupInput = installInput({
       flap: () => this.onFlap(),
-      restart: () => this.restart(),
+      restart: () => this.onRestartKey(),
       toggleBot: () => this.bot.toggle(),
+      exitTrain: () => this.onExitTrainKey(),
+      nextTrainEpoch: () => this.onNextTrainEpochKey(),
       quit: () => this.onQuitToTitle(),
     })
+  }
+
+  getMode(): GameMode {
+    return this.mode
+  }
+
+  isAwaitingTrainingEpoch(): boolean {
+    return this.mode === 'training' && (this.training?.isAwaitingNextEpoch() ?? false)
+  }
+
+  /** New random population + first visual epoch (title screen only). */
+  startEpochTraining(): void {
+    if (this.mode !== 'ready') return
+    this.bot.disable()
+    this.training?.dispose()
+    this.training = new CanvasTrainSession(
+      {
+        getWorldW: () => this.worldW,
+        getWorldH: () => this.worldH,
+        getCeiling: () => this.ceiling,
+        getGroundY: () => this.worldH - this.groundHeight,
+        getGravity: () => this.gravity,
+        getFlapImpulse: () => this.flapImpulse,
+        getMaxFallSpeed: () => this.maxFallSpeed,
+        bird: this.bird,
+        pipes: this.pipes,
+      },
+      this.trainingPopulation,
+      (json) => this.bot.setPolicy(json),
+    )
+    this.training.startFirstEpoch()
+    this.mode = 'training'
+    this.score = 0
+    if (!this.raf) this.start()
+  }
+
+  /** Continue after one epoch completes (breeding already applied). */
+  advanceTrainingEpoch(): void {
+    if (this.mode !== 'training' || !this.training) return
+    this.training.advanceEpoch()
+    if (!this.raf) this.start()
   }
 
   start() {
@@ -77,12 +125,18 @@ export class Game {
 
   destroy() {
     this.stop()
+    this.training?.dispose()
+    this.training = null
     window.removeEventListener('resize', this.resize)
     this.cleanupInput?.()
     this.cleanupInput = null
   }
 
   private resize = () => {
+    if (this.mode === 'training') {
+      this.exitTraining()
+    }
+
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1))
 
     // Full-bleed UI: make the *world* match the viewport (no bars, no cropping, no distortion).
@@ -130,13 +184,23 @@ export class Game {
     this.step(dt)
     this.draw()
 
+    if (this.mode === 'gameOver' || this.isAwaitingTrainingEpoch()) {
+      this.raf = 0
+      return
+    }
     this.raf = requestAnimationFrame(this.onFrame)
   }
 
   private step(dt: number) {
+    if (this.mode === 'gameOver') return
+    if (this.mode === 'training' && this.training?.isAwaitingNextEpoch()) return
+
     const groundY = this.worldH - this.groundHeight
 
-    if (this.mode === 'playing') {
+    if (this.mode === 'training') {
+      const d = dt * this.trainingDtMult
+      this.training?.step(d)
+    } else if (this.mode === 'playing') {
       const nowSec = performance.now() / 1000
       if (this.bot.step({ nowSec, worldW: this.worldW, worldH: this.worldH, ceiling: this.ceiling, groundY, bird: this.bird, pipes: this.pipes })) {
         this.applyFlap()
@@ -170,6 +234,10 @@ export class Game {
   }
 
   private onFlap() {
+    if (this.mode === 'training') {
+      return
+    }
+
     if (this.mode === 'ready') {
       this.mode = 'playing'
       this.score = 0
@@ -187,6 +255,33 @@ export class Game {
     if (this.mode === 'gameOver') {
       this.restart()
     }
+  }
+
+  private onRestartKey() {
+    if (this.mode === 'training') return
+    this.restart()
+  }
+
+  private onExitTrainKey() {
+    if (this.mode === 'training') {
+      this.exitTraining()
+    }
+  }
+
+  private onNextTrainEpochKey() {
+    if (this.isAwaitingTrainingEpoch()) {
+      this.advanceTrainingEpoch()
+    }
+  }
+
+  private exitTraining() {
+    this.training?.dispose()
+    this.training = null
+    this.pipes.reset()
+    this.bird.reset(this.worldH * gameConfig.bird.yFrac)
+    this.mode = 'ready'
+    this.score = 0
+    if (!this.raf) this.start()
   }
 
   private applyFlap() {
@@ -208,15 +303,21 @@ export class Game {
     this.score = 0
     this.pipes.reset()
     this.bird.reset(this.worldH * gameConfig.bird.yFrac)
+    this.start()
   }
 
   /** Esc — leave play / game over and return to title (no failure sound). */
   private onQuitToTitle() {
     this.bot.disable()
+    if (this.mode === 'training') {
+      this.exitTraining()
+      return
+    }
     this.mode = 'ready'
     this.score = 0
     this.pipes.reset()
     this.bird.reset(this.worldH * gameConfig.bird.yFrac)
+    if (!this.raf) this.start()
   }
 
   private updateScore() {
@@ -241,15 +342,21 @@ export class Game {
 
   private draw() {
     const groundY = this.worldH - this.groundHeight
+    const trainingHud = this.mode === 'training' ? this.training?.getHud() : undefined
+    const swarm = this.mode === 'training' ? (this.training?.getSwarmRender() ?? []) : []
+    const trainScore = this.mode === 'training' ? 0 : this.score
     render(this.ctx, {
       mode: this.mode,
       worldW: this.worldW,
       worldH: this.worldH,
       ceiling: this.ceiling,
       groundY,
-      score: this.score,
+      score: trainScore,
       bestScore: this.bestScore,
       botEnabled: this.bot.enabled,
+      trainingVisual: this.mode === 'training' && swarm.length === 0,
+      trainingHud,
+      trainingSwarm: swarm.length > 0 ? swarm : undefined,
       bird: this.bird,
       pipes: this.pipes,
     })

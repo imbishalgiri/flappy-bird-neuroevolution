@@ -1,6 +1,9 @@
 import type { Bird } from '../entities/Bird'
 import type { PipeSystem } from '../entities/PipeSystem'
 
+/** Minimal bird state for the policy observation vector. */
+export type BirdObserve = Pick<Bird, 'x' | 'y' | 'vy'>
+
 // Observation vector for the bot:
 // [0] bird_y_norm (0..1)
 // [1] bird_vy_norm (~-1..1)
@@ -12,7 +15,7 @@ export function observe(opts: {
   worldH: number
   ceiling: number
   groundY: number
-  bird: Bird
+  bird: BirdObserve
   pipes: PipeSystem
 }): number[] {
   const { worldW, ceiling, groundY, bird, pipes } = opts
@@ -37,4 +40,3 @@ function clamp01(v: number) {
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v))
 }
-

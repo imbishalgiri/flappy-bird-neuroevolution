@@ -4,6 +4,8 @@ import { observe } from './observe'
 import type { Bird } from '../entities/Bird'
 import type { PipeSystem } from '../entities/PipeSystem'
 
+const POLICY_STORAGE_KEY = 'flappy-bot-policy-v1'
+
 export class BotController {
   enabled = false
   private policy: MlpPolicy | null = null
@@ -16,6 +18,18 @@ export class BotController {
   async ensureLoaded() {
     if (this.policy) return
     try {
+      const raw = localStorage.getItem(POLICY_STORAGE_KEY)
+      if (raw) {
+        const json = JSON.parse(raw) as MlpPolicyJson
+        if (json.kind === 'mlp-v1') {
+          this.policy = new MlpPolicy(json)
+          return
+        }
+      }
+    } catch {
+      // ignore
+    }
+    try {
       const res = await fetch(`${import.meta.env.BASE_URL}bot/best-policy.json`, { cache: 'no-store' })
       if (!res.ok) return
       const json = (await res.json()) as MlpPolicyJson
@@ -23,6 +37,16 @@ export class BotController {
       this.policy = new MlpPolicy(json)
     } catch {
       // ignore; bot just won't be available
+    }
+  }
+
+  setPolicy(json: MlpPolicyJson) {
+    if (json.kind !== 'mlp-v1') return
+    this.policy = new MlpPolicy(json)
+    try {
+      localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(json))
+    } catch {
+      // private mode / quota
     }
   }
 
@@ -58,4 +82,3 @@ export class BotController {
     return false
   }
 }
-
